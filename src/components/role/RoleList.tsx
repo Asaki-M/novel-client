@@ -1,25 +1,25 @@
 import RoleCard from './RoleCard'
 import RoleAddButton from './RoleAddButton'
 import HorizontalScroll from '../ui/HorizontalScroll'
-import type { RoleItem } from '../../types'
+import type { Character } from '../../services/api'
 
 interface RoleListProps {
-  roles: RoleItem[]
+  characters: Character[]
   selectedId: string
   onSelect: (id: string) => void
-  onCreate: (role: RoleItem) => void
+  onCreate: (character: Character) => void
 }
 
-export default function RoleList({ roles, selectedId, onSelect, onCreate }: RoleListProps) {
+export default function RoleList({ characters, selectedId, onSelect, onCreate }: RoleListProps) {
   return (
     <HorizontalScroll className="mb-8">
       <RoleAddButton onCreate={onCreate} />
-      {roles.map((role) => (
+      {characters.map((character) => (
         <RoleCard
-          key={role.id}
-          role={role}
-          selected={selectedId === role.id}
-          onClick={() => onSelect(role.id)}
+          key={character.id}
+          character={character}
+          selected={selectedId === character.id}
+          onClick={() => onSelect(character.id)}
         />
       ))}
     </HorizontalScroll>

@@ -1,30 +1,50 @@
 import { useState } from 'react'
 import { Button, Text } from '@radix-ui/themes'
 import { Modal } from '../../components/ui/Dialog'
-import type { RoleItem } from '../../types'
+import type { Character } from '../../services/api'
 
 interface RoleAddButtonProps {
-  onCreate: (role: RoleItem) => void
+  onCreate: (character: Character) => void
 }
 
 export default function RoleAddButton({ onCreate }: RoleAddButtonProps) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [desc, setDesc] = useState('')
-  const [fallback, setFallback] = useState('C')
+  const [avatar, setAvatar] = useState('')
+  const [systemPrompt, setSystemPrompt] = useState('')
+  const [creating, setCreating] = useState(false)
 
-  function handleCreate() {
+  async function handleCreate() {
     const n = name.trim()
     const d = desc.trim()
-    const f = (fallback.trim() || 'C').slice(0, 1).toUpperCase()
+    const a = avatar.trim()
+    const sp = systemPrompt.trim()
+    
     if (!n) return
-    const id = `session-${Date.now()}`
-    const role: RoleItem = { id, name: n, desc: d || '自定义角色', fallback: f }
-    onCreate(role)
-    setOpen(false)
-    setName('')
-    setDesc('')
-    setFallback('C')
+    
+    try {
+      setCreating(true)
+      const character: Omit<Character, 'id' | 'created_at' | 'updated_at'> = {
+        name: n,
+        description: d || '自定义角色',
+        avatar: a || n.charAt(0).toUpperCase(),
+        systemPrompt: sp || `你是 ${n}，一个友好的AI助手。`,
+      }
+      
+      await onCreate(character as Character) // onCreate will handle the API call and return the full Character
+      
+      setOpen(false)
+      setName('')
+      setDesc('')
+      setAvatar('')
+      setSystemPrompt('')
+    } catch (error) {
+      console.error('Failed to create character:', error)
+      // You might want to show a toast or error message here
+    } finally {
+      setCreating(false)
+    }
   }
 
   return (
@@ -41,10 +61,12 @@ export default function RoleAddButton({ onCreate }: RoleAddButtonProps) {
         description={<>为你的会话添加一个新的预设角色。</>}
         footer={
           <div className="flex justify-end gap-3">
-            <Button variant="soft" onClick={() => setOpen(false)}>
+            <Button variant="soft" onClick={() => setOpen(false)} disabled={creating}>
               取消
             </Button>
-            <Button onClick={handleCreate}>创建</Button>
+            <Button onClick={handleCreate} disabled={creating || !name.trim()}>
+              {creating ? '创建中...' : '创建'}
+            </Button>
           </div>
         }
       >
@@ -55,7 +77,7 @@ export default function RoleAddButton({ onCreate }: RoleAddButtonProps) {
             </Text>
             <input
               className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-neutral-700 dark:bg-neutral-900"
-              placeholder="例如：角色卡 · 客服"
+              placeholder="例如：温柔学姐"
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
@@ -73,13 +95,25 @@ export default function RoleAddButton({ onCreate }: RoleAddButtonProps) {
           </div>
           <div>
             <Text as="label" size="2" className="mb-1 block">
-              头像字母
+              头像
             </Text>
             <input
-              className="w-24 rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-neutral-700 dark:bg-neutral-900"
-              placeholder="如 C"
-              value={fallback}
-              onChange={(e) => setFallback(e.target.value)}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-neutral-700 dark:bg-neutral-900"
+              placeholder="可以是 emoji 或字母，如 🌸 或 A"
+              value={avatar}
+              onChange={(e) => setAvatar(e.target.value)}
+            />
+          </div>
+          <div>
+            <Text as="label" size="2" className="mb-1 block">
+              系统提示词
+            </Text>
+            <textarea
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-neutral-700 dark:bg-neutral-900"
+              placeholder="定义角色的行为和回复风格..."
+              rows={3}
+              value={systemPrompt}
+              onChange={(e) => setSystemPrompt(e.target.value)}
             />
           </div>
         </div>

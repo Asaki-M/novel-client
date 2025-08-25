@@ -1,13 +1,13 @@
 import { Card, Flex, Text, Avatar, Button } from '@radix-ui/themes'
-import type { RoleItem } from '../../types'
+import type { Character } from '../../services/api'
 
 interface RoleCardProps {
-  role: RoleItem
+  character: Character
   selected: boolean
   onClick: () => void
 }
 
-export default function RoleCard({ role, selected, onClick }: RoleCardProps) {
+export default function RoleCard({ character, selected, onClick }: RoleCardProps) {
   return (
     <div className="w-64 shrink-0">
       <Card
@@ -29,13 +29,17 @@ export default function RoleCard({ role, selected, onClick }: RoleCardProps) {
       >
         <Flex direction="column" gap="3">
           <div className="flex items-center gap-2">
-            <Avatar fallback={role.fallback} radius="full" size="2" />
+            <Avatar 
+              fallback={character.avatar || character.name.charAt(0).toUpperCase()} 
+              radius="full" 
+              size="2" 
+            />
             <Text as="p" size="3" weight="medium">
-              {role.name}
+              {character.name}
             </Text>
           </div>
           <Text as="p" color="gray" size="2">
-            简介：{role.desc}
+            简介：{character.description}
           </Text>
           <Button variant={selected ? 'solid' : 'soft'}>{selected ? '当前' : '切换'}</Button>
         </Flex>
