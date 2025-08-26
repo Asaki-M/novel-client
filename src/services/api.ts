@@ -20,9 +20,13 @@ export interface ChatMessage {
 export interface ChatRequest {
   messages: ChatMessage[]
   characterId?: string
+  sessionId?: string
+  useMemory?: boolean
   temperature?: number
   max_tokens?: number
   stream?: boolean
+  useTools?: boolean
+  allowedTools?: string[]
 }
 
 export interface ChatResponse {

@@ -15,9 +15,13 @@ export function useChat() {
   const sendMessage = useCallback(async (
     messages: ChatMessage[],
     characterId?: string,
+    sessionId?: string,
     options?: {
+      useMemory?: boolean
       temperature?: number
       max_tokens?: number
+      useTools?: boolean
+      allowedTools?: string[]
       onStream?: (content: string) => void
     }
   ) => {
@@ -25,12 +29,20 @@ export function useChat() {
       setLoading({ isLoading: true })
       
       const apiMessages = convertToApiMessages(messages)
+      
+      // 当使用角色卡时自动启用记忆功能
+      const shouldUseMemory = characterId ? true : (options?.useMemory ?? false)
+      
       const chatRequest: ChatRequest = {
         messages: apiMessages,
         characterId,
+        sessionId,
+        useMemory: shouldUseMemory,
         temperature: options?.temperature,
         max_tokens: options?.max_tokens,
         stream: !!options?.onStream,
+        useTools: options?.useTools,
+        allowedTools: options?.allowedTools,
       }
 
       if (options?.onStream) {
@@ -72,24 +84,32 @@ export function useChat() {
   const sendMessageNonStreaming = useCallback(async (
     messages: ChatMessage[],
     characterId?: string,
+    sessionId?: string,
     options?: {
+      useMemory?: boolean
       temperature?: number
       max_tokens?: number
+      useTools?: boolean
+      allowedTools?: string[]
     }
   ) => {
-    return sendMessage(messages, characterId, options)
+    return sendMessage(messages, characterId, sessionId, options)
   }, [sendMessage])
 
   const sendMessageStreaming = useCallback(async (
     messages: ChatMessage[],
     characterId: string | undefined,
+    sessionId: string | undefined,
     onStream: (content: string) => void,
     options?: {
+      useMemory?: boolean
       temperature?: number
       max_tokens?: number
+      useTools?: boolean
+      allowedTools?: string[]
     }
   ) => {
-    return sendMessage(messages, characterId, { ...options, onStream })
+    return sendMessage(messages, characterId, sessionId, { ...options, onStream })
   }, [sendMessage])
 
   return {

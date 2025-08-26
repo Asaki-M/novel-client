@@ -6,6 +6,7 @@ import { useChat } from '../hooks/useChat'
 import { apiClient } from '../services/api'
 import type { ChatMessage } from '../types'
 import type { Character, ChatMessage as ApiChatMessage } from '../services/api'
+import { isImageContent } from '../utils'
 
 export default function Home() {
   const { characters, loading: charactersLoading, createCharacter } = useCharacters()
@@ -27,9 +28,9 @@ export default function Home() {
       sender: msg.role === 'user' ? 'me' as const : 'bot' as const,
       text: msg.content,
       // 检查是否为图片占位符或base64图片
-      isImage: msg.content.startsWith('data:image') || msg.content.includes('[image_generated'),
+      isImage: isImageContent(msg.content) || msg.content.includes('[image_generated'),
     }))
-  }, [])
+  }, [isImageContent])
 
   // 加载会话记忆
   const loadSessionMemory = useCallback(async (sessionId: string) => {
@@ -131,7 +132,7 @@ export default function Home() {
       console.error('Failed to create character:', error)
       throw error
     }
-  }, [createCharacter])
+  }, [createCharacter, saveSelectedCharacterToCache])
 
   const handleSendMessage = useCallback(async () => {
     const text = input.trim()
@@ -169,13 +170,15 @@ export default function Home() {
 
     try {
       // 使用实际的API调用
-      const response = await sendMessage(updatedMessages, currentCharacter.id, {
+      const response = await sendMessage(updatedMessages, currentCharacter.id, selectedSessionId, {
         temperature: 0.7,
         max_tokens: 1024,
+        useTools: true,
+        allowedTools: ['generate_illustration'],
       })
       
-      // 检查响应是否为图片（base64格式）
-      const isImage = response.startsWith('data:image')
+      // 检查响应是否为图片（base64或网络地址）
+      const isImage = isImageContent(response)
       
       const botMessage: ChatMessage = {
         id: `bot-${Date.now()}`,
@@ -301,15 +304,27 @@ export default function Home() {
                             src={m.text} 
                             alt="AI生成的图片" 
                             className="rounded-lg max-w-full h-auto"
+                            loading="lazy"
+                            onLoad={(e) => {
+                              // 图片加载成功时的处理
+                              const target = e.target as HTMLImageElement
+                              target.style.opacity = '1'
+                            }}
                             onError={(e) => {
                               // 图片加载失败时的处理
                               const target = e.target as HTMLImageElement
                               target.style.display = 'none'
-                              const errorDiv = document.createElement('div')
-                              errorDiv.textContent = '图片加载失败'
-                              errorDiv.className = 'text-red-500 text-sm'
-                              target.parentNode?.appendChild(errorDiv)
+                              
+                              // 检查是否已经有错误信息
+                              const parent = target.parentNode as HTMLElement
+                              if (!parent.querySelector('.error-message')) {
+                                const errorDiv = document.createElement('div')
+                                errorDiv.textContent = '图片加载失败'
+                                errorDiv.className = 'error-message text-red-500 text-sm bg-red-50 dark:bg-red-900/20 p-2 rounded border-l-4 border-red-500'
+                                parent.appendChild(errorDiv)
+                              }
                             }}
+                            style={{ opacity: '0', transition: 'opacity 0.3s ease-in-out' }}
                           />
                         </div>
                       ) : (
