@@ -1,25 +1,52 @@
-import { Card, Flex, Text, Button, TextArea, Avatar } from '@radix-ui/themes'
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { Card, Flex, Text, TextArea, Avatar, Switch } from '@radix-ui/themes'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import RoleList from '../components/role/RoleList'
+import { LoadingButton } from '../components/ui'
 import { useCharacters } from '../hooks/useCharacters'
 import { useChat } from '../hooks/useChat'
 import { apiClient } from '../services/api'
 import type { ChatMessage } from '../types'
 import type { Character, ChatMessage as ApiChatMessage } from '../services/api'
-import { isImageContent } from '../utils'
+import { isImageContent, generateSessionId, clearSessionId } from '../utils'
 
 export default function Home() {
   const { characters, loading: charactersLoading, createCharacter } = useCharacters()
-  const { sendMessage } = useChat()
+  const { sendMessage, sendMessageStreaming } = useChat()
   
-  const [selectedSessionId, setSelectedSessionId] = useState<string>('')
+  const [selectedCharacterId, setSelectedCharacterId] = useState<string>('')
   const [input, setInput] = useState('')
   const [messagesBySession, setMessagesBySession] = useState<Record<string, ChatMessage[]>>({})
   const [isSending, setIsSending] = useState(false)
   const [isLoadingMemory, setIsLoadingMemory] = useState(false)
+  const [isClearingSession, setIsClearingSession] = useState(false)
+  const [useStreamingMode, setUseStreamingMode] = useState(false)
+  
+  // 聊天容器的ref，用于自动滚动
+  const chatContainerRef = useRef<HTMLDivElement>(null)
+
+  // 滚动到底部的函数
+  const scrollToBottom = useCallback((smooth: boolean = true) => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
+        behavior: smooth ? 'smooth' : 'auto'
+      })
+    }
+  }, [])
+
+  // 当消息变化时自动滚动到底部
+  useEffect(() => {
+    scrollToBottom()
+  }, [messagesBySession, selectedCharacterId, scrollToBottom])
 
   // 本地缓存键名
   const CACHE_KEY = 'nover-selected-character'
+
+  // 生成当前会话ID
+  const currentSessionId = useMemo(() => {
+    if (!selectedCharacterId) return ''
+    return generateSessionId(selectedCharacterId)
+  }, [selectedCharacterId])
 
   // 从API消息转换为本地消息格式
   const convertApiMessagesToLocal = useCallback((apiMessages: ApiChatMessage[]): ChatMessage[] => {
@@ -30,7 +57,7 @@ export default function Home() {
       // 检查是否为图片占位符或base64图片
       isImage: isImageContent(msg.content) || msg.content.includes('[image_generated'),
     }))
-  }, [isImageContent])
+  }, [])
 
   // 加载会话记忆
   const loadSessionMemory = useCallback(async (sessionId: string) => {
@@ -47,6 +74,8 @@ export default function Home() {
           ...prev,
           [sessionId]: localMessages,
         }))
+        // 加载完成后滚动到底部
+        setTimeout(scrollToBottom, 100)
       }
     } catch (error) {
       console.error('Failed to load session memory:', error)
@@ -58,7 +87,7 @@ export default function Home() {
     } finally {
       setIsLoadingMemory(false)
     }
-  }, [messagesBySession, convertApiMessagesToLocal])
+  }, [messagesBySession, convertApiMessagesToLocal, scrollToBottom])
 
   // 保存选中的角色到本地缓存
   const saveSelectedCharacterToCache = useCallback((characterId: string) => {
@@ -81,7 +110,7 @@ export default function Home() {
 
   // Set default selected character when characters load
   useEffect(() => {
-    if (characters.length > 0 && !selectedSessionId) {
+    if (characters.length > 0 && !selectedCharacterId) {
       // 先尝试从缓存恢复
       const cachedCharacterId = loadSelectedCharacterFromCache()
       
@@ -89,26 +118,29 @@ export default function Home() {
       const cachedCharacter = cachedCharacterId ? characters.find(c => c.id === cachedCharacterId) : null
       
       if (cachedCharacter) {
-        setSelectedSessionId(cachedCharacter.id)
-        loadSessionMemory(cachedCharacter.id)
+        setSelectedCharacterId(cachedCharacter.id)
+        const sessionId = generateSessionId(cachedCharacter.id)
+        loadSessionMemory(sessionId)
       } else {
         // 如果缓存中没有或角色不存在，选择第一个
-        setSelectedSessionId(characters[0].id)
-        loadSessionMemory(characters[0].id)
+        setSelectedCharacterId(characters[0].id)
+        const sessionId = generateSessionId(characters[0].id)
+        loadSessionMemory(sessionId)
         saveSelectedCharacterToCache(characters[0].id)
       }
     }
-  }, [characters, selectedSessionId, loadSelectedCharacterFromCache, loadSessionMemory, saveSelectedCharacterToCache])
+  }, [characters, selectedCharacterId, loadSelectedCharacterFromCache, loadSessionMemory, saveSelectedCharacterToCache])
 
   // 处理角色选择变化
   const handleCharacterSelect = useCallback((characterId: string) => {
-    setSelectedSessionId(characterId)
+    setSelectedCharacterId(characterId)
     saveSelectedCharacterToCache(characterId)
-    loadSessionMemory(characterId)
+    const sessionId = generateSessionId(characterId)
+    loadSessionMemory(sessionId)
   }, [saveSelectedCharacterToCache, loadSessionMemory])
 
-  const currentMessages = useMemo(() => messagesBySession[selectedSessionId] ?? [], [messagesBySession, selectedSessionId])
-  const currentCharacter = characters.find((c) => c.id === selectedSessionId)
+  const currentMessages = useMemo(() => messagesBySession[currentSessionId] ?? [], [messagesBySession, currentSessionId])
+  const currentCharacter = characters.find((c) => c.id === selectedCharacterId)
 
   const handleCreateCharacter = useCallback(async (characterData: Omit<Character, 'id' | 'created_at' | 'updated_at'>) => {
     try {
@@ -120,12 +152,13 @@ export default function Home() {
         text: `你好，我是 ${newCharacter.name}，${newCharacter.description}。很高兴认识你！`,
       }
       
+      const sessionId = generateSessionId(newCharacter.id)
       setMessagesBySession(prev => ({
         ...prev,
-        [newCharacter.id]: [welcomeMessage],
+        [sessionId]: [welcomeMessage],
       }))
       
-      setSelectedSessionId(newCharacter.id)
+      setSelectedCharacterId(newCharacter.id)
       saveSelectedCharacterToCache(newCharacter.id)
       return newCharacter
     } catch (error) {
@@ -133,6 +166,44 @@ export default function Home() {
       throw error
     }
   }, [createCharacter, saveSelectedCharacterToCache])
+
+  // 清除当前会话
+  const handleClearCurrentSession = useCallback(async () => {
+    if (!selectedCharacterId || isClearingSession) return
+    
+    setIsClearingSession(true)
+    try {
+      // 先清除服务器端记忆（使用当前会话ID）
+      try {
+        await apiClient.clearMemory(currentSessionId)
+        console.log('Server memory cleared successfully')
+      } catch (error) {
+        console.warn('Failed to clear server memory:', error)
+        // 即使服务器清除失败，也继续清除本地数据
+      }
+      
+      // 清除本地存储的会话ID
+      clearSessionId(selectedCharacterId)
+      
+      // 生成新的会话ID
+      const newSessionId = generateSessionId(selectedCharacterId)
+      
+      // 清空本地消息记录
+      setMessagesBySession(prev => {
+        const newState = { ...prev }
+        // 删除旧会话的消息
+        delete newState[currentSessionId]
+        // 初始化新会话为空数组
+        newState[newSessionId] = []
+        return newState
+      })
+      
+    } catch (error) {
+      console.error('Failed to clear session:', error)
+    } finally {
+      setIsClearingSession(false)
+    }
+  }, [selectedCharacterId, currentSessionId, isClearingSession])
 
   const handleSendMessage = useCallback(async () => {
     const text = input.trim()
@@ -148,7 +219,7 @@ export default function Home() {
     
     setMessagesBySession(prev => ({
       ...prev,
-      [selectedSessionId]: updatedMessages,
+      [currentSessionId]: updatedMessages,
     }))
     
     setInput('')
@@ -165,36 +236,85 @@ export default function Home() {
     
     setMessagesBySession(prev => ({
       ...prev,
-      [selectedSessionId]: [...updatedMessages, loadingMessage],
+      [currentSessionId]: [...updatedMessages, loadingMessage],
     }))
 
     try {
-      // 使用实际的API调用
-      const response = await sendMessage(updatedMessages, currentCharacter.id, selectedSessionId, {
-        temperature: 0.7,
-        max_tokens: 1024,
-        useTools: true,
-        allowedTools: ['generate_illustration'],
-      })
-      
-      // 检查响应是否为图片（base64或网络地址）
-      const isImage = isImageContent(response)
-      
-      const botMessage: ChatMessage = {
-        id: `bot-${Date.now()}`,
-        sender: 'bot',
-        text: response,
-        isImage,
+      if (useStreamingMode) {
+        // 流式模式（不支持工具调用）
+        let fullResponse = ''
+        const botMessageId = `bot-${Date.now()}`
+        
+        // 创建初始的机器人消息
+        const initialBotMessage: ChatMessage = {
+          id: botMessageId,
+          sender: 'bot',
+          text: '',
+          isLoading: false,
+        }
+        
+        // 替换loading为初始机器人消息
+        setMessagesBySession(prev => ({
+          ...prev,
+          [currentSessionId]: [...updatedMessages, initialBotMessage],
+        }))
+        
+        await sendMessageStreaming(
+          [userMessage], // 只发送当前用户消息，后端会根据sessionId自动拼接历史
+          currentCharacter.id,
+          currentSessionId,
+          (chunk: string) => {
+            fullResponse += chunk
+            // 实时更新消息内容
+            setMessagesBySession(prev => {
+              const currentMessages = prev[currentSessionId] || []
+              const updatedMessages = currentMessages.map(msg => 
+                msg.id === botMessageId 
+                  ? { ...msg, text: fullResponse }
+                  : msg
+              )
+              return {
+                ...prev,
+                [currentSessionId]: updatedMessages,
+              }
+            })
+            // 流式响应过程中也要滚动到底部（非平滑）
+            setTimeout(() => scrollToBottom(false), 0)
+          },
+          {
+            temperature: 0.7,
+            max_tokens: 1024,
+            useTools: false, // 流式模式不支持工具调用
+          }
+        )
+      } else {
+        // 非流式模式（支持工具调用）
+        const response = await sendMessage([userMessage], currentCharacter.id, currentSessionId, { // 只发送当前用户消息
+          temperature: 0.7,
+          max_tokens: 1024,
+          useTools: true,
+          allowedTools: ['generate_illustration'],
+        })
+        
+        // 检查响应是否为图片（base64或网络地址）
+        const isImage = isImageContent(response)
+        
+        const botMessage: ChatMessage = {
+          id: `bot-${Date.now()}`,
+          sender: 'bot',
+          text: response,
+          isImage,
+        }
+        
+        // 替换loading消息为实际回复
+        setMessagesBySession(prev => ({
+          ...prev,
+          [currentSessionId]: [
+            ...updatedMessages,
+            botMessage
+          ],
+        }))
       }
-      
-      // 替换loading消息为实际回复
-      setMessagesBySession(prev => ({
-        ...prev,
-        [selectedSessionId]: [
-          ...updatedMessages,
-          botMessage
-        ],
-      }))
     } catch (error) {
       console.error('Failed to send message:', error)
       // 替换loading消息为错误消息
@@ -206,12 +326,12 @@ export default function Home() {
       
       setMessagesBySession(prev => ({
         ...prev,
-        [selectedSessionId]: [...updatedMessages, errorMessage],
+        [currentSessionId]: [...updatedMessages, errorMessage],
       }))
     } finally {
       setIsSending(false)
     }
-  }, [input, currentCharacter, currentMessages, selectedSessionId, isSending, sendMessage])
+  }, [input, currentCharacter, currentMessages, currentSessionId, isSending, sendMessage, sendMessageStreaming, useStreamingMode, scrollToBottom])
 
   const handleKeyPress = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -246,22 +366,48 @@ export default function Home() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10">
-      <h1 className="mb-6 text-center text-2xl font-semibold dark:text-white">首页</h1>
-
       <RoleList
         characters={characters}
-        selectedId={selectedSessionId}
+        selectedId={selectedCharacterId}
         onSelect={handleCharacterSelect}
         onCreate={handleCreateCharacter}
       />
 
       <div className="mx-auto max-w-3xl">
-        <div className="mb-3 text-center text-xs text-gray-500 dark:text-neutral-400">
-          会话ID：{selectedSessionId}
+        <div className="mb-3 flex items-center justify-center gap-4 text-xs text-gray-500 dark:text-neutral-400">
+          <div className="flex items-center gap-2">
+            <span>会话ID：{currentSessionId}</span>
+            {selectedCharacterId && (
+              <LoadingButton
+                size="1"
+                variant="ghost"
+                onClick={handleClearCurrentSession}
+                loading={isClearingSession}
+                className="text-xs"
+              >
+                清除会话
+              </LoadingButton>
+            )}
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <Text size="1">流式响应</Text>
+            <Switch
+              size="1"
+              checked={useStreamingMode}
+              onCheckedChange={setUseStreamingMode}
+            />
+            {useStreamingMode && (
+              <Text size="1" color="amber">（不支持工具调用）</Text>
+            )}
+          </div>
         </div>
 
         <Card>
-          <div className="max-h-[480px] overflow-y-auto space-y-3 p-4">
+          <div 
+            ref={chatContainerRef}
+            className="max-h-[480px] overflow-y-auto space-y-3 p-4"
+          >
             {isLoadingMemory ? (
               <div className="text-center text-gray-500 dark:text-neutral-400">
                 <div className="flex items-center justify-center space-x-2">
@@ -348,12 +494,13 @@ export default function Home() {
             className="flex-1"
             disabled={isSending || !currentCharacter}
           />
-          <Button
+          <LoadingButton
             onClick={handleSendMessage}
-            disabled={!input.trim() || isSending || !currentCharacter}
+            disabled={!input.trim() || !currentCharacter}
+            loading={isSending}
           >
-            {isSending ? '发送中...' : '发送'}
-          </Button>
+            发送
+          </LoadingButton>
         </Flex>
       </div>
     </div>
