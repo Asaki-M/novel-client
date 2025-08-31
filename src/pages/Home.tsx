@@ -7,7 +7,7 @@ import { useChat } from '../hooks/useChat'
 import { apiClient } from '../services/api'
 import type { ChatMessage } from '../types'
 import type { Character, ChatMessage as ApiChatMessage } from '../services/api'
-import { isImageContent, generateSessionId, clearSessionId } from '../utils'
+import { isImageContent, generateSessionId, clearSessionId, isSupabaseImageUrl, extractSupabaseImageUrl } from '../utils'
 
 export default function Home() {
   const { characters, loading: charactersLoading, createCharacter } = useCharacters()
@@ -41,22 +41,48 @@ export default function Home() {
 
   // 本地缓存键名
   const CACHE_KEY = 'nover-selected-character'
-
+  const STREAMING_CACHE_KEY = 'nover-streaming-mode'
+  
   // 生成当前会话ID
   const currentSessionId = useMemo(() => {
     if (!selectedCharacterId) return ''
     return generateSessionId(selectedCharacterId)
   }, [selectedCharacterId])
 
+  // 从本地缓存恢复流式模式
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STREAMING_CACHE_KEY)
+      if (saved !== null) {
+        setUseStreamingMode(saved === '1')
+      }
+    } catch (error) {
+      console.error('Failed to load streaming mode from cache:', error)
+    }
+  }, [])
+
   // 从API消息转换为本地消息格式
   const convertApiMessagesToLocal = useCallback((apiMessages: ApiChatMessage[]): ChatMessage[] => {
-    return apiMessages.map((msg, index) => ({
-      id: `${msg.role}-${Date.now()}-${index}`,
-      sender: msg.role === 'user' ? 'me' as const : 'bot' as const,
-      text: msg.content,
-      // 检查是否为图片占位符或base64图片
-      isImage: isImageContent(msg.content) || msg.content.includes('[image_generated'),
-    }))
+    return apiMessages.map((msg, index) => {
+      let isImage = isImageContent(msg.content) || msg.content.includes('[image_generated')
+      let displayText = msg.content
+
+      // 如果不是直接的图片，检查是否包含Supabase图片URL
+      if (!isImage) {
+        const extractedImageUrl = extractSupabaseImageUrl(msg.content)
+        if (extractedImageUrl) {
+          isImage = true
+          displayText = extractedImageUrl
+        }
+      }
+
+      return {
+        id: `${msg.role}-${Date.now()}-${index}`,
+        sender: msg.role === 'user' ? 'me' as const : 'bot' as const,
+        text: displayText,
+        isImage,
+      }
+    })
   }, [])
 
   // 加载会话记忆
@@ -105,6 +131,15 @@ export default function Home() {
     } catch (error) {
       console.error('Failed to load selected character from cache:', error)
       return null
+    }
+  }, [])
+
+  // 保存流式模式到本地缓存
+  const saveStreamingModeToCache = useCallback((enabled: boolean) => {
+    try {
+      localStorage.setItem(STREAMING_CACHE_KEY, enabled ? '1' : '0')
+    } catch (error) {
+      console.error('Failed to save streaming mode to cache:', error)
     }
   }, [])
 
@@ -265,19 +300,39 @@ export default function Home() {
           currentSessionId,
           (chunk: string) => {
             fullResponse += chunk
-            // 实时更新消息内容
-            setMessagesBySession(prev => {
-              const currentMessages = prev[currentSessionId] || []
-              const updatedMessages = currentMessages.map(msg => 
-                msg.id === botMessageId 
-                  ? { ...msg, text: fullResponse }
-                  : msg
-              )
-              return {
-                ...prev,
-                [currentSessionId]: updatedMessages,
-              }
-            })
+
+            // 检查累积的响应中是否包含Supabase图片URL
+            const extractedImageUrl = extractSupabaseImageUrl(fullResponse)
+
+            if (extractedImageUrl) {
+              // 将当前 bot 消息替换为图片消息
+              setMessagesBySession(prev => {
+                const currentMessages = prev[currentSessionId] || []
+                const updatedMessages = currentMessages.map(msg =>
+                  msg.id === botMessageId
+                    ? { ...msg, text: extractedImageUrl, isImage: true }
+                    : msg
+                )
+                return {
+                  ...prev,
+                  [currentSessionId]: updatedMessages,
+                }
+              })
+            } else {
+              // 实时更新文本内容（保留换行）
+              setMessagesBySession(prev => {
+                const currentMessages = prev[currentSessionId] || []
+                const updatedMessages = currentMessages.map(msg =>
+                  msg.id === botMessageId
+                    ? { ...msg, text: fullResponse, isImage: false }
+                    : msg
+                )
+                return {
+                  ...prev,
+                  [currentSessionId]: updatedMessages,
+                }
+              })
+            }
             // 流式响应过程中也要滚动到底部（非平滑）
             setTimeout(() => scrollToBottom(false), 0)
           },
@@ -297,12 +352,22 @@ export default function Home() {
         })
         
         // 检查响应是否为图片（base64或网络地址）
-        const isImage = isImageContent(response)
-        
+        let isImage = isImageContent(response)
+        let displayText = response
+
+        // 如果不是直接的图片，检查是否包含Supabase图片URL
+        if (!isImage) {
+          const extractedImageUrl = extractSupabaseImageUrl(response)
+          if (extractedImageUrl) {
+            isImage = true
+            displayText = extractedImageUrl
+          }
+        }
+
         const botMessage: ChatMessage = {
           id: `bot-${Date.now()}`,
           sender: 'bot',
-          text: response,
+          text: displayText,
           isImage,
         }
         
@@ -395,7 +460,10 @@ export default function Home() {
             <Switch
               size="1"
               checked={useStreamingMode}
-              onCheckedChange={setUseStreamingMode}
+              onCheckedChange={(checked) => {
+                setUseStreamingMode(checked)
+                saveStreamingModeToCache(checked)
+              }}
             />
             {useStreamingMode && (
               <Text size="1" color="amber">（不支持工具调用）</Text>
@@ -474,8 +542,8 @@ export default function Home() {
                           />
                         </div>
                       ) : (
-                        m.text
-                      )}
+                        <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.text}</span>
+                       )}
                     </div>
                     {isMe && <Avatar fallback="我" radius="full" size="2" />}
                   </div>

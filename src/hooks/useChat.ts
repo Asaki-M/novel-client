@@ -32,6 +32,11 @@ export function useChat() {
       
       // 当使用角色卡时自动启用记忆功能
       const shouldUseMemory = characterId ? true : (options?.useMemory ?? false)
+      const isStreaming = !!options?.onStream
+
+      if (shouldUseMemory && !sessionId) {
+        throw new Error('useMemory 为 true 时必须提供 sessionId')
+      }
       
       const chatRequest: ChatRequest = {
         messages: apiMessages,
@@ -40,8 +45,8 @@ export function useChat() {
         useMemory: shouldUseMemory,
         temperature: options?.temperature,
         max_tokens: options?.max_tokens,
-        stream: !!options?.onStream,
-        useTools: options?.useTools,
+        stream: isStreaming,
+        useTools: isStreaming ? false : options?.useTools,
         allowedTools: options?.allowedTools,
       }
 
@@ -64,9 +69,9 @@ export function useChat() {
         // Non-streaming mode
         const response = await apiClient.chat(chatRequest)
         
-        if (response.success && response.data) {
+        if (response.success && typeof response.message === 'string') {
           setLoading({ isLoading: false })
-          return response.data.response
+          return response.message
         } else {
           throw new Error(response.error || 'Failed to send message')
         }

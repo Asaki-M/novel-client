@@ -1,50 +1,75 @@
- // 图片检测函数：支持base64和网络地址
-  export const isImageContent = (content: string): boolean => {
-    // 检查是否为base64图片
-    if (content.startsWith('data:image/')) {
-      return true
-    }
-    
-    // 检查是否为网络图片地址
-    try {
-      const url = new URL(content)
-      if (url.protocol === 'http:' || url.protocol === 'https:') {
-        // 1. 检查URL是否以常见图片扩展名结尾
-        const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp']
-        const pathname = url.pathname.toLowerCase()
-        if (imageExtensions.some(ext => pathname.endsWith(ext))) {
-          return true
-        }
-        
-        // 2. 检查是否为已知的图片服务域名
-        const imageServiceDomains = [
-          'supabase.co',        // Supabase Storage
-          'amazonaws.com',      // AWS S3
-          'cloudinary.com',     // Cloudinary
-          'imgur.com',          // Imgur
-          'i.imgur.com',        // Imgur direct
-          'githubusercontent.com', // GitHub raw images
-          'unsplash.com',       // Unsplash
-          'pexels.com',         // Pexels
-          'pixabay.com',        // Pixabay
-        ]
-        
-        if (imageServiceDomains.some(domain => url.hostname.includes(domain))) {
-          return true
-        }
-        
-        // 3. 检查路径中是否包含图片相关的关键词
-        const imagePathKeywords = ['/image/', '/img/', '/photo/', '/pic/', '/avatar/', '/thumb/', 'text_to_image']
-        if (imagePathKeywords.some(keyword => pathname.includes(keyword))) {
-          return true
-        }
-      }
-    } catch {
-      // 如果不是有效的URL，返回false
-    }
-    
+// 检测是否为Supabase图片URL的函数
+export const isSupabaseImageUrl = (content: string): boolean => {
+  try {
+    const url = new URL(content.trim())
+    return url.hostname.includes('supabase.co') &&
+           url.pathname.includes('/storage') &&
+           (url.pathname.includes('/text_to_image') || url.pathname.includes('/image'))
+  } catch {
     return false
   }
+}
+
+// 从文本中提取Supabase图片URL
+export const extractSupabaseImageUrl = (text: string): string | null => {
+  // 匹配Supabase图片URL的正则表达式
+  const supabaseUrlRegex = /https:\/\/[a-zA-Z0-9]+\.supabase\.co\/storage\/v1\/object\/public\/[^\s\n]+\.(png|jpg|jpeg|gif|webp|svg)/gi
+  const match = text.match(supabaseUrlRegex)
+  return match ? match[0] : null
+}
+
+// 图片检测函数：支持base64和网络地址
+export const isImageContent = (content: string): boolean => {
+  // 检查是否为base64图片
+  if (content.startsWith('data:image/')) {
+    return true
+  }
+
+  // 优先检查是否为Supabase图片URL
+  if (isSupabaseImageUrl(content)) {
+    return true
+  }
+
+  // 检查是否为网络图片地址
+  try {
+    const url = new URL(content)
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      // 1. 检查URL是否以常见图片扩展名结尾
+      const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp']
+      const pathname = url.pathname.toLowerCase()
+      if (imageExtensions.some(ext => pathname.endsWith(ext))) {
+        return true
+      }
+
+      // 2. 检查是否为已知的图片服务域名
+      const imageServiceDomains = [
+        'supabase.co',        // Supabase Storage
+        'amazonaws.com',      // AWS S3
+        'cloudinary.com',     // Cloudinary
+        'imgur.com',          // Imgur
+        'i.imgur.com',        // Imgur direct
+        'githubusercontent.com', // GitHub raw images
+        'unsplash.com',       // Unsplash
+        'pexels.com',         // Pexels
+        'pixabay.com',        // Pixabay
+      ]
+
+      if (imageServiceDomains.some(domain => url.hostname.includes(domain))) {
+        return true
+      }
+
+      // 3. 检查路径中是否包含图片相关的关键词
+      const imagePathKeywords = ['/image/', '/img/', '/photo/', '/pic/', '/avatar/', '/thumb/', 'text_to_image']
+      if (imagePathKeywords.some(keyword => pathname.includes(keyword))) {
+        return true
+      }
+    }
+  } catch {
+    // 如果不是有效的URL，返回false
+  }
+
+  return false
+}
 
 // 生成随机ID的函数
 export const generateRandomId = (): string => {

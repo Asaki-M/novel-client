@@ -15,6 +15,7 @@ export interface Character {
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
+  created_at?: string
 }
 
 export interface ChatRequest {
@@ -32,15 +33,7 @@ export interface ChatRequest {
 export interface ChatResponse {
   success: boolean
   message?: string
-  data?: {
-    response: string
-    character?: Character
-    usage?: {
-      prompt_tokens: number
-      completion_tokens: number
-      total_tokens: number
-    }
-  }
+  debug?: unknown
   error?: string
 }
 
@@ -122,7 +115,7 @@ class ApiClient {
 
   // Chat API (non-streaming)
   async chat(request: ChatRequest): Promise<ChatResponse> {
-    return this.request('/api/chat', {
+    return this.request('/api/agent/chat', {
       method: 'POST',
       body: JSON.stringify(request),
     })
@@ -130,7 +123,7 @@ class ApiClient {
 
   // Chat API (streaming)
   async chatStream(request: ChatRequest): Promise<ReadableStream<Uint8Array> | null> {
-    const url = `${this.baseURL}/api/chat`
+    const url = `${this.baseURL}/api/agent/chat/stream`
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -176,6 +169,7 @@ export async function* parseStreamingResponse(stream: ReadableStream<Uint8Array>
       const lines = chunk.split('\n')
 
       for (const line of lines) {
+        if (!line) continue
         if (line.startsWith('data: ')) {
           const payload = line.slice(6)
           if (payload === '[DONE]') {
@@ -183,12 +177,21 @@ export async function* parseStreamingResponse(stream: ReadableStream<Uint8Array>
           }
           try {
             const data = JSON.parse(payload)
-            if (data.content) {
+            if (data && typeof data.content === 'string') {
               yield data.content
+            } else if (typeof payload === 'string') {
+              yield payload
             }
           } catch {
-            // Ignore malformed JSON
+            // 非 JSON，直接输出
+            yield payload
           }
+        } else {
+          // 兼容纯文本 SSE 行
+          if (line === '[DONE]') {
+            return
+          }
+          yield line
         }
       }
     }
