@@ -2,12 +2,13 @@ import { Card, Flex, Text, TextArea, Avatar, Switch } from '@radix-ui/themes'
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import RoleList from '../components/role/RoleList'
 import { LoadingButton } from '../components/ui'
+import { ImagePreview } from '../components/image-preview'
 import { useCharacters } from '../hooks/useCharacters'
 import { useChat } from '../hooks/useChat'
 import { apiClient } from '../services/api'
 import type { ChatMessage } from '../types'
 import type { Character, ChatMessage as ApiChatMessage } from '../services/api'
-import { isImageContent, generateSessionId, clearSessionId, isSupabaseImageUrl, extractSupabaseImageUrl } from '../utils'
+import { isImageContent, generateSessionId, clearSessionId, extractSupabaseImageUrl } from '../utils'
 
 export default function Home() {
   const { characters, loading: charactersLoading, createCharacter } = useCharacters()
@@ -513,34 +514,13 @@ export default function Home() {
                           </div>
                         </div>
                       ) : m.isImage ? (
-                        <div className="max-w-sm">
-                          <img 
-                            src={m.text} 
-                            alt="AI生成的图片" 
-                            className="rounded-lg max-w-full h-auto"
-                            loading="lazy"
-                            onLoad={(e) => {
-                              // 图片加载成功时的处理
-                              const target = e.target as HTMLImageElement
-                              target.style.opacity = '1'
-                            }}
-                            onError={(e) => {
-                              // 图片加载失败时的处理
-                              const target = e.target as HTMLImageElement
-                              target.style.display = 'none'
-                              
-                              // 检查是否已经有错误信息
-                              const parent = target.parentNode as HTMLElement
-                              if (!parent.querySelector('.error-message')) {
-                                const errorDiv = document.createElement('div')
-                                errorDiv.textContent = '图片加载失败'
-                                errorDiv.className = 'error-message text-red-500 text-sm bg-red-50 dark:bg-red-900/20 p-2 rounded border-l-4 border-red-500'
-                                parent.appendChild(errorDiv)
-                              }
-                            }}
-                            style={{ opacity: '0', transition: 'opacity 0.3s ease-in-out' }}
-                          />
-                        </div>
+                        <ImagePreview
+                          src={m.text}
+                          alt="AI生成的图片"
+                          maxWidth="300px"
+                          showDownload={true}
+                          downloadFilename={`chat-image-${m.id}`}
+                        />
                       ) : (
                         <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.text}</span>
                        )}
