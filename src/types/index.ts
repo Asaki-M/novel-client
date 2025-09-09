@@ -21,8 +21,10 @@ export interface Character {
   avatar?: string | null
   description: string
   systemPrompt: string
-  created_at?: string
-  updated_at?: string
+  backstoryPrompt?: string
+  backstory?: string
+  createdAt?: string
+  updatedAt?: string
 }
 
 export interface ApiChatMessage {

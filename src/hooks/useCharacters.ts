@@ -26,7 +26,7 @@ export function useCharacters() {
     }
   }, [])
 
-  const createCharacter = useCallback(async (characterData: Omit<Character, 'id' | 'created_at' | 'updated_at'>) => {
+  const createCharacter = useCallback(async (characterData: Omit<Character, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
       const response = await apiClient.createCharacter(characterData)
       
@@ -42,7 +42,7 @@ export function useCharacters() {
     }
   }, [])
 
-  const updateCharacter = useCallback(async (id: string, updates: Partial<Omit<Character, 'id' | 'created_at' | 'updated_at'>>) => {
+  const updateCharacter = useCallback(async (id: string, updates: Partial<Omit<Character, 'id' | 'createdAt' | 'updatedAt'>>) => {
     try {
       const response = await apiClient.updateCharacter(id, updates)
       

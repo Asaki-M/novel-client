@@ -8,8 +8,10 @@ export interface Character {
   avatar?: string | null
   description: string
   systemPrompt: string
-  created_at?: string
-  updated_at?: string
+  backstoryPrompt?: string
+  backstory?: string
+  createdAt?: string
+  updatedAt?: string
 }
 
 export interface ChatMessage {
@@ -18,7 +20,15 @@ export interface ChatMessage {
   created_at?: string
 }
 
+// New simplified chat request format based on API documentation
 export interface ChatRequest {
+  sessionId: string
+  characterId: string
+  message: string
+}
+
+// Legacy chat request format for backward compatibility
+export interface LegacyChatRequest {
   messages: ChatMessage[]
   characterId?: string
   sessionId?: string
@@ -30,10 +40,19 @@ export interface ChatRequest {
   allowedTools?: string[]
 }
 
+export interface ChatResponseData {
+  character: Character
+  message: string
+  usage?: {
+    prompt_tokens: number
+    completion_tokens: number
+    total_tokens: number
+  }
+}
+
 export interface ChatResponse {
   success: boolean
-  message?: string
-  debug?: unknown
+  data: ChatResponseData
   error?: string
 }
 
@@ -93,14 +112,14 @@ class ApiClient {
     return this.request(`/api/characters/${id}`)
   }
 
-  async createCharacter(character: Omit<Character, 'id' | 'created_at' | 'updated_at'>): Promise<ApiResponse<Character>> {
+  async createCharacter(character: Omit<Character, 'id' | 'createdAt' | 'updatedAt'>): Promise<ApiResponse<Character>> {
     return this.request('/api/characters', {
       method: 'POST',
       body: JSON.stringify(character),
     })
   }
 
-  async updateCharacter(id: string, updates: Partial<Omit<Character, 'id' | 'created_at' | 'updated_at'>>): Promise<ApiResponse<Character>> {
+  async updateCharacter(id: string, updates: Partial<Omit<Character, 'id' | 'createdAt' | 'updatedAt'>>): Promise<ApiResponse<Character>> {
     return this.request(`/api/characters/${id}`, {
       method: 'PUT',
       body: JSON.stringify(updates),
@@ -113,7 +132,7 @@ class ApiClient {
     })
   }
 
-  // Chat API (non-streaming)
+  // Chat API (non-streaming) - Updated to match new API format
   async chat(request: ChatRequest): Promise<ChatResponse> {
     return this.request('/api/agent/chat', {
       method: 'POST',
@@ -121,7 +140,23 @@ class ApiClient {
     })
   }
 
-  // Chat API (streaming)
+  // Legacy chat API for backward compatibility
+  async chatLegacy(request: LegacyChatRequest): Promise<ChatResponse> {
+    // Convert legacy format to new format
+    const lastUserMessage = request.messages
+      .filter(msg => msg.role === 'user')
+      .pop()?.content || ''
+
+    const newRequest: ChatRequest = {
+      sessionId: request.sessionId || 'default',
+      characterId: request.characterId || '',
+      message: lastUserMessage
+    }
+
+    return this.chat(newRequest)
+  }
+
+  // Chat API (streaming) - Note: streaming may need to be handled differently with new API
   async chatStream(request: ChatRequest): Promise<ReadableStream<Uint8Array> | null> {
     const url = `${this.baseURL}/api/agent/chat/stream`
     const response = await fetch(url, {

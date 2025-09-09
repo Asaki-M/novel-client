@@ -1,53 +1,39 @@
 import { useState, useCallback } from 'react'
-import { apiClient, parseStreamingResponse, type ChatRequest, type ChatMessage as ApiChatMessage } from '../services/api'
+import { apiClient, parseStreamingResponse, type ChatRequest } from '../services/api'
 import type { ChatMessage, LoadingState } from '../types'
 
 export function useChat() {
   const [loading, setLoading] = useState<LoadingState>({ isLoading: false })
-
-  const convertToApiMessages = useCallback((messages: ChatMessage[]): ApiChatMessage[] => {
-    return messages.map(msg => ({
-      role: msg.sender === 'me' ? 'user' as const : 'assistant' as const,
-      content: msg.text,
-    }))
-  }, [])
 
   const sendMessage = useCallback(async (
     messages: ChatMessage[],
     characterId?: string,
     sessionId?: string,
     options?: {
+      onStream?: (content: string) => void
       useMemory?: boolean
       temperature?: number
       max_tokens?: number
       useTools?: boolean
       allowedTools?: string[]
-      onStream?: (content: string) => void
     }
   ) => {
     try {
       setLoading({ isLoading: true })
-      
-      const apiMessages = convertToApiMessages(messages)
-      
-      // 当使用角色卡时自动启用记忆功能
-      const shouldUseMemory = characterId ? true : (options?.useMemory ?? false)
-      const isStreaming = !!options?.onStream
 
-      if (shouldUseMemory && !sessionId) {
-        throw new Error('useMemory 为 true 时必须提供 sessionId')
+      // Get the last user message for the new API format
+      const lastUserMessage = messages
+        .filter(msg => msg.sender === 'me')
+        .pop()?.text || ''
+
+      if (!characterId || !sessionId) {
+        throw new Error('characterId and sessionId are required')
       }
-      
+
       const chatRequest: ChatRequest = {
-        messages: apiMessages,
-        characterId,
         sessionId,
-        useMemory: shouldUseMemory,
-        temperature: options?.temperature,
-        max_tokens: options?.max_tokens,
-        stream: isStreaming,
-        useTools: isStreaming ? false : options?.useTools,
-        allowedTools: options?.allowedTools,
+        characterId,
+        message: lastUserMessage,
       }
 
       if (options?.onStream) {
@@ -62,29 +48,29 @@ export function useChat() {
           fullResponse += chunk
           options.onStream(chunk)
         }
-        
+
         setLoading({ isLoading: false })
         return fullResponse
       } else {
         // Non-streaming mode
         const response = await apiClient.chat(chatRequest)
-        
-        if (response.success && typeof response.message === 'string') {
+
+        if (response.success && response.data && typeof response.data.message === 'string') {
           setLoading({ isLoading: false })
-          return response.message
+          return response.data.message
         } else {
-          throw new Error(response.error || 'Failed to send message')
+          throw new Error(response.error || 'Invalid response format')
         }
       }
     } catch (error) {
       console.error('Error sending message:', error)
-      setLoading({ 
-        isLoading: false, 
-        error: error instanceof Error ? error.message : 'Unknown error' 
+      setLoading({
+        isLoading: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
       })
       throw error
     }
-  }, [convertToApiMessages])
+  }, [])
 
   const sendMessageNonStreaming = useCallback(async (
     messages: ChatMessage[],

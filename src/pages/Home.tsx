@@ -178,7 +178,7 @@ export default function Home() {
   const currentMessages = useMemo(() => messagesBySession[currentSessionId] ?? [], [messagesBySession, currentSessionId])
   const currentCharacter = characters.find((c) => c.id === selectedCharacterId)
 
-  const handleCreateCharacter = useCallback(async (characterData: Omit<Character, 'id' | 'created_at' | 'updated_at'>) => {
+  const handleCreateCharacter = useCallback(async (characterData: Omit<Character, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
       const newCharacter = await createCharacter(characterData)
       // Initialize with a welcome message
@@ -345,12 +345,7 @@ export default function Home() {
         )
       } else {
         // 非流式模式（支持工具调用）
-        const response = await sendMessage([userMessage], currentCharacter.id, currentSessionId, { // 只发送当前用户消息
-          temperature: 0.7,
-          max_tokens: 1024,
-          useTools: true,
-          allowedTools: ['generate_illustration'],
-        })
+        const response = await sendMessage([userMessage], currentCharacter.id, currentSessionId)
         
         // 检查响应是否为图片（base64或网络地址）
         let isImage = isImageContent(response)
