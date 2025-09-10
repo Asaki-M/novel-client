@@ -56,6 +56,20 @@ export interface ChatResponse {
   error?: string
 }
 
+// 流式响应数据类型
+export interface StreamResponseData {
+  type: 'thinking' | 'action' | 'observation' | 'final_answer' | 'error'
+  content: string
+  iteration?: number
+  action?: string
+  isComplete: boolean
+  usage?: {
+    prompt_tokens: number
+    completion_tokens: number
+    total_tokens: number
+  }
+}
+
 export interface ApiResponse<T> {
   success: boolean
   data?: T
@@ -156,15 +170,16 @@ class ApiClient {
     return this.chat(newRequest)
   }
 
-  // Chat API (streaming) - Note: streaming may need to be handled differently with new API
+  // Chat API (streaming) - Updated for new SSE format
   async chatStream(request: ChatRequest): Promise<ReadableStream<Uint8Array> | null> {
     const url = `${this.baseURL}/api/agent/chat/stream`
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
       },
-      body: JSON.stringify({ ...request, stream: true }),
+      body: JSON.stringify(request),
     })
 
     if (!response.ok) {
@@ -190,47 +205,84 @@ class ApiClient {
 // Export the API client instance
 export const apiClient = new ApiClient(API_BASE_URL)
 
-// Utility function to handle streaming chat responses
+// Utility function to handle streaming chat responses (SSE format)
 export async function* parseStreamingResponse(stream: ReadableStream<Uint8Array>) {
   const reader = stream.getReader()
   const decoder = new TextDecoder()
+  let buffer = ''
 
   try {
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
 
-      const chunk = decoder.decode(value, { stream: true })
-      const lines = chunk.split('\n')
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+
+      // Keep the last incomplete line in buffer
+      buffer = lines.pop() || ''
 
       for (const line of lines) {
-        if (!line) continue
-        if (line.startsWith('data: ')) {
-          const payload = line.slice(6)
-          if (payload === '[DONE]') {
+        const trimmedLine = line.trim()
+        if (trimmedLine === '') continue
+
+        // Handle SSE format: "data: {...}"
+        if (trimmedLine.startsWith('data: ')) {
+          const dataContent = trimmedLine.slice(6) // Remove "data: " prefix
+
+          // Check for end marker
+          if (dataContent === '[DONE]') {
             return
           }
+
           try {
-            const data = JSON.parse(payload)
-            if (data && typeof data.content === 'string') {
-              yield data.content
-            } else if (typeof payload === 'string') {
-              yield payload
-            }
-          } catch {
-            // 非 JSON，直接输出
-            yield payload
+            const data: StreamResponseData = JSON.parse(dataContent)
+            yield data
+          } catch (error) {
+            console.warn('Failed to parse SSE data:', dataContent, error)
+            // Fallback: yield as plain text
+            yield dataContent
           }
-        } else {
-          // 兼容纯文本 SSE 行
-          if (line === '[DONE]') {
-            return
-          }
-          yield line
         }
       }
     }
   } finally {
     reader.releaseLock()
   }
+}
+
+// Utility function to extract content from stream data for simple text streaming
+export function extractContentFromStreamData(data: StreamResponseData | string): string {
+  // Handle fallback string case
+  if (typeof data === 'string') {
+    return data
+  }
+
+  // For final_answer type, return the content directly
+  if (data.type === 'final_answer') {
+    return data.content
+  }
+
+  // For action type, show what action is being performed
+  if (data.type === 'action') {
+    return `[执行工具: ${data.action || '未知'}]`
+  }
+
+  // For observation type, show the result
+  if (data.type === 'observation') {
+    return data.content
+  }
+
+  // For thinking type, optionally show thinking process (or hide it)
+  if (data.type === 'thinking') {
+    return '' // Don't show thinking process in the chat to reduce noise
+  }
+
+  // For error type, show the error
+  if (data.type === 'error') {
+    return `错误: ${data.content}`
+  }
+
+  // Default: return content
+  return data.content
 }

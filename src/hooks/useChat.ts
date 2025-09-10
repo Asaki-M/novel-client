@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { apiClient, parseStreamingResponse, type ChatRequest } from '../services/api'
+import { apiClient, parseStreamingResponse, extractContentFromStreamData, type ChatRequest } from '../services/api'
 import type { ChatMessage, LoadingState } from '../types'
 
 export function useChat() {
@@ -44,9 +44,12 @@ export function useChat() {
         }
 
         let fullResponse = ''
-        for await (const chunk of parseStreamingResponse(stream)) {
-          fullResponse += chunk
-          options.onStream(chunk)
+        for await (const streamData of parseStreamingResponse(stream)) {
+          const content = extractContentFromStreamData(streamData)
+          if (content) {
+            fullResponse += content
+            options.onStream(content)
+          }
         }
 
         setLoading({ isLoading: false })

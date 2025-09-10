@@ -3,8 +3,10 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import RoleList from '../components/role/RoleList'
 import { LoadingButton } from '../components/ui'
 import { ImagePreview } from '../components/image-preview'
+import StreamingStatus from '../components/chat/StreamingStatus'
 import { useCharacters } from '../hooks/useCharacters'
 import { useChat } from '../hooks/useChat'
+import { useStreamingChat } from '../hooks/useStreamingChat'
 import { apiClient } from '../services/api'
 import type { ChatMessage } from '../types'
 import type { Character, ChatMessage as ApiChatMessage } from '../services/api'
@@ -12,7 +14,8 @@ import { isImageContent, generateSessionId, clearSessionId, extractSupabaseImage
 
 export default function Home() {
   const { characters, loading: charactersLoading, createCharacter } = useCharacters()
-  const { sendMessage, sendMessageStreaming } = useChat()
+  const { sendMessage } = useChat()
+  const { sendStreamingMessage, streamingState } = useStreamingChat()
   
   const [selectedCharacterId, setSelectedCharacterId] = useState<string>('')
   const [input, setInput] = useState('')
@@ -277,10 +280,9 @@ export default function Home() {
 
     try {
       if (useStreamingMode) {
-        // 流式模式（不支持工具调用）
-        let fullResponse = ''
+        // 流式模式（支持新的 Agent 工作流）
         const botMessageId = `bot-${Date.now()}`
-        
+
         // 创建初始的机器人消息
         const initialBotMessage: ChatMessage = {
           id: botMessageId,
@@ -288,30 +290,30 @@ export default function Home() {
           text: '',
           isLoading: false,
         }
-        
+
         // 替换loading为初始机器人消息
         setMessagesBySession(prev => ({
           ...prev,
           [currentSessionId]: [...updatedMessages, initialBotMessage],
         }))
-        
-        await sendMessageStreaming(
+
+        await sendStreamingMessage(
           [userMessage], // 只发送当前用户消息，后端会根据sessionId自动拼接历史
           currentCharacter.id,
           currentSessionId,
-          (chunk: string) => {
-            fullResponse += chunk
-
-            // 检查累积的响应中是否包含Supabase图片URL
-            const extractedImageUrl = extractSupabaseImageUrl(fullResponse)
-
-            if (extractedImageUrl) {
-              // 将当前 bot 消息替换为图片消息
+          {
+            onThinking: (content) => {
+              // 可以选择显示思考过程，或者隐藏
+              console.log('Agent thinking:', content)
+            },
+            onAction: (action) => {
+              // 显示正在执行的工具
+              const actionText = `[正在执行: ${action}]`
               setMessagesBySession(prev => {
                 const currentMessages = prev[currentSessionId] || []
                 const updatedMessages = currentMessages.map(msg =>
                   msg.id === botMessageId
-                    ? { ...msg, text: extractedImageUrl, isImage: true }
+                    ? { ...msg, text: actionText, isImage: false }
                     : msg
                 )
                 return {
@@ -319,13 +321,55 @@ export default function Home() {
                   [currentSessionId]: updatedMessages,
                 }
               })
-            } else {
-              // 实时更新文本内容（保留换行）
+            },
+            onObservation: (content) => {
+              // 显示工具执行结果（如果需要）
+              console.log('Tool result:', content)
+            },
+            onFinalAnswer: (content) => {
+              // 检查响应中是否包含Supabase图片URL
+              const extractedImageUrl = extractSupabaseImageUrl(content)
+
+              if (extractedImageUrl) {
+                // 将当前 bot 消息替换为图片消息
+                setMessagesBySession(prev => {
+                  const currentMessages = prev[currentSessionId] || []
+                  const updatedMessages = currentMessages.map(msg =>
+                    msg.id === botMessageId
+                      ? { ...msg, text: extractedImageUrl, isImage: true }
+                      : msg
+                  )
+                  return {
+                    ...prev,
+                    [currentSessionId]: updatedMessages,
+                  }
+                })
+              } else {
+                // 更新最终文本内容
+                setMessagesBySession(prev => {
+                  const currentMessages = prev[currentSessionId] || []
+                  const updatedMessages = currentMessages.map(msg =>
+                    msg.id === botMessageId
+                      ? { ...msg, text: content, isImage: false }
+                      : msg
+                  )
+                  return {
+                    ...prev,
+                    [currentSessionId]: updatedMessages,
+                  }
+                })
+              }
+
+              // 滚动到底部
+              setTimeout(() => scrollToBottom(true), 100)
+            },
+            onError: (error) => {
+              // 显示错误信息
               setMessagesBySession(prev => {
                 const currentMessages = prev[currentSessionId] || []
                 const updatedMessages = currentMessages.map(msg =>
                   msg.id === botMessageId
-                    ? { ...msg, text: fullResponse, isImage: false }
+                    ? { ...msg, text: `错误: ${error}`, isImage: false }
                     : msg
                 )
                 return {
@@ -334,13 +378,6 @@ export default function Home() {
                 }
               })
             }
-            // 流式响应过程中也要滚动到底部（非平滑）
-            setTimeout(() => scrollToBottom(false), 0)
-          },
-          {
-            temperature: 0.7,
-            max_tokens: 1024,
-            useTools: false, // 流式模式不支持工具调用
           }
         )
       } else {
@@ -392,7 +429,7 @@ export default function Home() {
     } finally {
       setIsSending(false)
     }
-  }, [input, currentCharacter, currentMessages, currentSessionId, isSending, sendMessage, sendMessageStreaming, useStreamingMode, scrollToBottom])
+  }, [input, currentCharacter, currentMessages, currentSessionId, isSending, sendMessage, sendStreamingMessage, useStreamingMode, scrollToBottom])
 
   const handleKeyPress = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -525,6 +562,9 @@ export default function Home() {
                 )
               })
             )}
+
+            {/* 流式状态显示 */}
+            <StreamingStatus streamingState={streamingState} />
           </div>
         </Card>
 
