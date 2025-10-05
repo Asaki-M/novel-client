@@ -9,6 +9,7 @@ export function useChat() {
     messages: ChatMessage[],
     characterId?: string,
     sessionId?: string,
+    knowledgeName?: string,
     options?: {
       onStream?: (content: string) => void
       useMemory?: boolean
@@ -34,6 +35,7 @@ export function useChat() {
         sessionId,
         characterId,
         message: lastUserMessage,
+        knowledgeName,
       }
 
       if (options?.onStream) {
@@ -79,22 +81,16 @@ export function useChat() {
     messages: ChatMessage[],
     characterId?: string,
     sessionId?: string,
-    options?: {
-      useMemory?: boolean
-      temperature?: number
-      max_tokens?: number
-      useTools?: boolean
-      allowedTools?: string[]
-    }
+    knowledgeName?: string,
   ) => {
-    return sendMessage(messages, characterId, sessionId, options)
+    return sendMessage(messages, characterId, sessionId, knowledgeName)
   }, [sendMessage])
 
   const sendMessageStreaming = useCallback(async (
     messages: ChatMessage[],
     characterId: string | undefined,
     sessionId: string | undefined,
-    onStream: (content: string) => void,
+    knowledgeName?: string,
     options?: {
       useMemory?: boolean
       temperature?: number
@@ -103,7 +99,7 @@ export function useChat() {
       allowedTools?: string[]
     }
   ) => {
-    return sendMessage(messages, characterId, sessionId, { ...options, onStream })
+    return sendMessage(messages, characterId, sessionId, knowledgeName, options)
   }, [sendMessage])
 
   return {

@@ -35,6 +35,7 @@ export function useStreamingChat() {
     messages: ChatMessage[],
     characterId?: string,
     sessionId?: string,
+    knowledgeName?: string,
     callbacks?: StreamingCallbacks
   ) => {
     try {
@@ -54,6 +55,7 @@ export function useStreamingChat() {
         sessionId,
         characterId,
         message: lastUserMessage,
+        knowledgeName,
       }
 
       const stream = await apiClient.chatStream(chatRequest)

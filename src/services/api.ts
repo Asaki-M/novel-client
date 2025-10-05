@@ -26,6 +26,7 @@ export interface ChatRequest {
   sessionId: string
   characterId: string
   message: string
+  knowledgeName?: string
 }
 
 // Legacy chat request format for backward compatibility

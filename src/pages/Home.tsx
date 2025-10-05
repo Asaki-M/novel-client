@@ -307,6 +307,7 @@ export default function Home() {
           [userMessage], // 只发送当前用户消息，后端会根据sessionId自动拼接历史
           currentCharacter.id,
           currentSessionId,
+          knowledgeName,
           {
             onThinking: (content) => {
               // 可以选择显示思考过程，或者隐藏
@@ -388,7 +389,7 @@ export default function Home() {
         )
       } else {
         // 非流式模式（支持工具调用）
-        const response = await sendMessage([userMessage], currentCharacter.id, currentSessionId)
+        const response = await sendMessage([userMessage], currentCharacter.id, currentSessionId, knowledgeName)
         
         // 检查响应是否为图片（base64或网络地址）
         let isImage = isImageContent(response)
