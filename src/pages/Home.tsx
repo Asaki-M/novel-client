@@ -1,4 +1,4 @@
-import { Card, Flex, Text, TextArea, Avatar, Switch } from '@radix-ui/themes'
+import { Card, Flex, Text, TextArea, Avatar, Switch, Select } from '@radix-ui/themes'
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import RoleList from '../components/role/RoleList'
 import { LoadingButton } from '../components/ui'
@@ -7,6 +7,7 @@ import StreamingStatus from '../components/chat/StreamingStatus'
 import { useCharacters } from '../hooks/useCharacters'
 import { useChat } from '../hooks/useChat'
 import { useStreamingChat } from '../hooks/useStreamingChat'
+import { useKnowledgeBase } from '../hooks/useKnowledgeBase'
 import { apiClient } from '../services/api'
 import type { ChatMessage } from '../types'
 import type { Character, ChatMessage as ApiChatMessage } from '../services/api'
@@ -16,8 +17,10 @@ export default function Home() {
   const { characters, loading: charactersLoading, createCharacter } = useCharacters()
   const { sendMessage } = useChat()
   const { sendStreamingMessage, streamingState } = useStreamingChat()
-  
+  const { knowledgeBases } = useKnowledgeBase()
+
   const [selectedCharacterId, setSelectedCharacterId] = useState<string>('')
+  const [selectedKnowledgeBase, setSelectedKnowledgeBase] = useState<string>('none')
   const [input, setInput] = useState('')
   const [messagesBySession, setMessagesBySession] = useState<Record<string, ChatMessage[]>>({})
   const [isSending, setIsSending] = useState(false)
@@ -251,19 +254,19 @@ export default function Home() {
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       sender: 'me',
-      text,
+      text,  // 只使用原始文本，不拼接
     }
 
     const updatedMessages = [...currentMessages, userMessage]
-    
+
     setMessagesBySession(prev => ({
       ...prev,
       [currentSessionId]: updatedMessages,
     }))
-    
+
     setInput('')
     setIsSending(true)
-    
+
     // 添加loading占位符
     const loadingMessageId = `loading-${Date.now()}`
     const loadingMessage: ChatMessage = {
@@ -272,11 +275,14 @@ export default function Home() {
       text: '',
       isLoading: true,
     }
-    
+
     setMessagesBySession(prev => ({
       ...prev,
       [currentSessionId]: [...updatedMessages, loadingMessage],
     }))
+
+    // 准备知识库名称参数
+    const knowledgeName = selectedKnowledgeBase !== 'none' ? selectedKnowledgeBase : undefined
 
     try {
       if (useStreamingMode) {
@@ -403,7 +409,7 @@ export default function Home() {
           text: displayText,
           isImage,
         }
-        
+
         // 替换loading消息为实际回复
         setMessagesBySession(prev => ({
           ...prev,
@@ -421,7 +427,7 @@ export default function Home() {
         sender: 'bot',
         text: '抱歉，发送消息失败了，请稍后重试。',
       }
-      
+
       setMessagesBySession(prev => ({
         ...prev,
         [currentSessionId]: [...updatedMessages, errorMessage],
@@ -429,7 +435,7 @@ export default function Home() {
     } finally {
       setIsSending(false)
     }
-  }, [input, currentCharacter, currentMessages, currentSessionId, isSending, sendMessage, sendStreamingMessage, useStreamingMode, scrollToBottom])
+  }, [input, currentCharacter, isSending, currentMessages, selectedKnowledgeBase, currentSessionId, useStreamingMode, sendStreamingMessage, scrollToBottom, sendMessage])
 
   const handleKeyPress = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -487,7 +493,15 @@ export default function Home() {
               </LoadingButton>
             )}
           </div>
-          
+
+          {selectedKnowledgeBase && selectedKnowledgeBase !== 'none' && (
+            <div className="flex items-center gap-2">
+              <Text size="1" color="blue">
+                📚 知识库: {knowledgeBases.find(kb => kb._name === selectedKnowledgeBase)?._metadata.name || selectedKnowledgeBase}
+              </Text>
+            </div>
+          )}
+
           <div className="flex items-center gap-2">
             <Text size="1">流式响应</Text>
             <Switch
@@ -568,7 +582,7 @@ export default function Home() {
           </div>
         </Card>
 
-        <Flex gap="3" align="center" className="mt-3">
+        <Flex gap="3" align="end" className="mt-3">
           <TextArea
             placeholder="输入消息..."
             value={input}
@@ -577,6 +591,22 @@ export default function Home() {
             className="flex-1"
             disabled={isSending || !currentCharacter}
           />
+          <div className="flex flex-col gap-1">
+            <Text size="1" color="gray">
+              知识库
+            </Text>
+            <Select.Root value={selectedKnowledgeBase} onValueChange={setSelectedKnowledgeBase}>
+              <Select.Trigger placeholder="选择知识库（可选）" style={{ minWidth: '180px' }} />
+              <Select.Content>
+                <Select.Item value="none">不使用知识库</Select.Item>
+                {knowledgeBases.map((kb) => (
+                  <Select.Item key={kb.id} value={kb._name}>
+                    {kb._metadata.name}
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
+          </div>
           <LoadingButton
             onClick={handleSendMessage}
             disabled={!input.trim() || !currentCharacter}

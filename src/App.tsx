@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Routes, Route, NavLink } from 'react-router-dom'
-import { Theme } from '@radix-ui/themes'
+import { Theme, Tabs } from '@radix-ui/themes'
 import * as Switch from '@radix-ui/react-switch'
 import { MoonIcon, SunIcon } from '@radix-ui/react-icons'
 import Home from './pages/Home'
+import KnowledgeBase from './pages/KnowledgeBase'
 
 function App() {
   const [appearance, setAppearance] = useState<'light' | 'dark'>(() => {
@@ -14,6 +14,10 @@ function App() {
       : 'light'
   })
 
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    return localStorage.getItem('activeTab') || 'chat'
+  })
+
   useEffect(() => {
     localStorage.setItem('appearance', appearance)
     const root = document.documentElement
@@ -21,25 +25,21 @@ function App() {
     else root.classList.remove('dark')
   }, [appearance])
 
+  useEffect(() => {
+    localStorage.setItem('activeTab', activeTab)
+  }, [activeTab])
+
   return (
     <Theme appearance={appearance}>
       <div className="min-h-screen bg-white text-gray-900 dark:bg-neutral-900 dark:text-neutral-100">
         <header className="sticky top-0 z-10 border-b border-gray-200 bg-white/70 backdrop-blur-md dark:border-neutral-800 dark:bg-neutral-900/70">
           <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-            <nav className="flex items-center gap-4">
-              <NavLink
-                to="/"
-                className={({ isActive }) =>
-                  `text-sm font-medium transition-colors ${
-                    isActive
-                      ? 'text-indigo-600 dark:text-indigo-400'
-                      : 'text-gray-600 hover:text-indigo-600 dark:text-neutral-300 dark:hover:text-indigo-400'
-                  }`
-                }
-              >
-                首页
-              </NavLink>
-            </nav>
+            <Tabs.Root value={activeTab} onValueChange={setActiveTab}>
+              <Tabs.List>
+                <Tabs.Trigger value="chat">聊天</Tabs.Trigger>
+                <Tabs.Trigger value="knowledge">知识库</Tabs.Trigger>
+              </Tabs.List>
+            </Tabs.Root>
             <div className="flex items-center gap-2">
               <SunIcon className="h-4 w-4 text-gray-600 dark:text-neutral-300" />
               <Switch.Root
@@ -55,9 +55,8 @@ function App() {
         </header>
 
         <main>
-          <Routes>
-            <Route path="/" element={<Home />} />
-          </Routes>
+          {activeTab === 'chat' && <Home />}
+          {activeTab === 'knowledge' && <KnowledgeBase />}
         </main>
       </div>
     </Theme>

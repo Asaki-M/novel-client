@@ -1,5 +1,6 @@
 // API configuration
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3008'
+const CHAT_API_BASE_URL = import.meta.env.VITE_CHAT_API_BASE_URL || 'http://localhost:3008'
+const RAG_API_BASE_URL = import.meta.env.VITE_RAG_API_BASE_URL || 'http://localhost:3009'
 
 // API types based on the documentation
 export interface Character {
@@ -76,19 +77,53 @@ export interface ApiResponse<T> {
   error?: string
 }
 
+// Knowledge Base types
+export interface KnowledgeBase {
+  id: string
+  _name: string
+  _metadata: {
+    name: string
+    description?: string
+    created: string
+  }
+  _configuration?: unknown
+  chromaClient?: unknown
+  apiClient?: unknown
+}
+
+export interface CreateKnowledgeBaseRequest {
+  name: string
+  description?: string
+}
+
+export interface Document {
+  pageContent: string
+  metadata?: Record<string, unknown>
+}
+
+export interface SearchResult {
+  pageContent: string
+  metadata?: Record<string, unknown>
+  score?: number
+}
+
 // HTTP client with error handling
 class ApiClient {
-  private baseURL: string
+  private chatBaseURL: string
+  private ragBaseURL: string
 
-  constructor(baseURL: string) {
-    this.baseURL = baseURL
+  constructor(chatBaseURL: string, ragBaseURL: string) {
+    this.chatBaseURL = chatBaseURL
+    this.ragBaseURL = ragBaseURL
   }
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    useRagAPI = false
   ): Promise<T> {
-    const url = `${this.baseURL}${endpoint}`
+    const baseURL = useRagAPI ? this.ragBaseURL : this.chatBaseURL
+    const url = `${baseURL}${endpoint}`
     const config: RequestInit = {
       headers: {
         'Content-Type': 'application/json',
@@ -99,7 +134,7 @@ class ApiClient {
 
     try {
       const response = await fetch(url, config)
-      
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
@@ -172,7 +207,7 @@ class ApiClient {
 
   // Chat API (streaming) - Updated for new SSE format
   async chatStream(request: ChatRequest): Promise<ReadableStream<Uint8Array> | null> {
-    const url = `${this.baseURL}/api/agent/chat/stream`
+    const url = `${this.chatBaseURL}/api/agent/chat/stream`
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -200,10 +235,138 @@ class ApiClient {
       method: 'DELETE',
     })
   }
+
+  // Knowledge Base APIs
+  async getKnowledgeBases(): Promise<KnowledgeBase[]> {
+    const url = `${this.ragBaseURL}/api/knowledge-base/collections`
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    // 直接返回数组，不需要包装在 ApiResponse 中
+    return await response.json()
+  }
+
+  async createKnowledgeBase(data: CreateKnowledgeBaseRequest): Promise<KnowledgeBase> {
+    const url = `${this.ragBaseURL}/api/knowledge-base`
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    return await response.json()
+  }
+
+  async updateKnowledgeBase(
+    collectionName: string,
+    updates: { newName?: string; newDescription?: string }
+  ): Promise<ApiResponse<KnowledgeBase>> {
+    return this.request(`/api/knowledge-base/${collectionName}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    }, true)
+  }
+
+  async deleteKnowledgeBase(collectionName: string): Promise<ApiResponse<void>> {
+    return this.request(`/api/knowledge-base/${collectionName}`, {
+      method: 'DELETE',
+    }, true)
+  }
+
+  async addDocuments(
+    collectionName: string,
+    documents: Document[]
+  ): Promise<ApiResponse<{ added: number }>> {
+    return this.request(`/api/knowledge-base/${collectionName}/documents`, {
+      method: 'POST',
+      body: JSON.stringify({ documents }),
+    }, true)
+  }
+
+  async searchDocuments(
+    collectionName: string,
+    query: string,
+    k?: number,
+    filter?: Record<string, unknown>
+  ): Promise<SearchResult[]> {
+    const url = `${this.ragBaseURL}/api/knowledge-base/${collectionName}/search`
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query, k, filter }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const data = await response.json()
+
+    // 返回格式: { success: true, documents: [{ index, document: { text }, relevance_score }] }
+    if (data.success && data.documents) {
+      return data.documents.map((item: { index: number; document: { text: string }; relevance_score: number }) => ({
+        pageContent: item.document.text,
+        metadata: { index: item.index },
+        score: item.relevance_score,
+      }))
+    }
+
+    return []
+  }
+
+  async deleteDocuments(
+    collectionName: string,
+    ids: string[]
+  ): Promise<ApiResponse<{ deleted: number }>> {
+    return this.request(`/api/knowledge-base/${collectionName}/documents`, {
+      method: 'DELETE',
+      body: JSON.stringify({ ids }),
+    }, true)
+  }
+
+  async splitText(
+    text: string,
+    chunkSize?: number,
+    chunkOverlap?: number
+  ): Promise<string[]> {
+    const url = `${this.ragBaseURL}/api/split-text`
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ text, chunkSize, chunkOverlap }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    // 返回的是包含 pageContent 的对象数组
+    const data = await response.json()
+    // 提取 pageContent 字段
+    return data.map((item: { pageContent: string }) => item.pageContent)
+  }
 }
 
 // Export the API client instance
-export const apiClient = new ApiClient(API_BASE_URL)
+export const apiClient = new ApiClient(CHAT_API_BASE_URL, RAG_API_BASE_URL)
 
 // Utility function to handle streaming chat responses (SSE format)
 export async function* parseStreamingResponse(stream: ReadableStream<Uint8Array>) {
